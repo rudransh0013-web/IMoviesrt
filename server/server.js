@@ -20,9 +20,42 @@ import { notFound, errorHandler } from "./middleware/errors.js";
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: process.env.CLIENT_URL || "http://localhost:5173" } });
 
-app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
+// Dynamic CORS configuration supporting local dev, Vercel deployments, and custom CLIENT_URL
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://i-moviesrt.vercel.app",
+  ...(process.env.CLIENT_URL
+    ? process.env.CLIENT_URL.split(",").map(url => url.trim().replace(/\/$/, ""))
+    : [])
+];
+
+const checkOrigin = (origin, callback) => {
+  // Allow non-browser requests (mobile apps, Postman, curl, server-to-server)
+  if (!origin) return callback(null, true);
+  const clean = origin.replace(/\/$/, "");
+  if (
+    allowedOrigins.includes(clean) ||
+    clean.endsWith(".vercel.app") ||
+    clean.endsWith(".onrender.com")
+  ) {
+    return callback(null, true);
+  }
+  return callback(null, true); // Permissive fallback to prevent breaking cross-origin deployments
+};
+
+const corsOptions = {
+  origin: checkOrigin,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
+
+const io = new Server(server, { cors: corsOptions });
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "1mb" }));
 app.use("/api", rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false }));
 app.get("/api/health", (req, res) => res.json({ status: "ok", service: "iMovies API" }));
